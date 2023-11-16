@@ -7,6 +7,7 @@ concurrency:
 on:
   push:
     branches:
+      - create-windows-debug-binary
       - master
       - release-**
       - queued_ltr_backports
@@ -87,29 +88,16 @@ jobs:
 
       - name: Build QGIS Application
         run: |
-          CCACHE_DIR=/w/.ccache/QGIS ./ms-windows/mingw/build.sh x86_64 nodebug 4
+          CCACHE_DIR=/w/.ccache/QGIS ./ms-windows/mingw/build.sh x86_64 debug 4
 
       - name: Create Portable zip
         run: |
           DISTROOT=build_mingw64/dist/usr/x86_64-w64-mingw32/sys-root/mingw
-          DEBUGROOT=dist_debug
-          for file in $(find $DISTROOT -name '*.debug' \( -type l -or -type f \)); do
-              DEST=${file/$DISTROOT/$DEBUGROOT}
-              mkdir -p "$(dirname $DEST)"
-              sudo mv "$file" "$DEST"
-          done
           sudo mv $DISTROOT QGIS-Portable
           zip -r qgis-portable-win64.zip QGIS-Portable
-          (cd $DEBUGROOT && zip -r - *) > qgis-portable-win64-debugsym.zip
 
       - name: Upload QGIS for Windows 64bit
         uses: actions/upload-artifact@v3
         with:
           name: QGIS for Windows 64bit
           path: qgis-portable-win64.zip
-
-      - name: Upload QGIS for Windows 64bit Debug Symbols
-        uses: actions/upload-artifact@v3
-        with:
-          name: QGIS for Windows 64bit Debug Symbols
-          path: qgis-portable-win64-debugsym.zip
