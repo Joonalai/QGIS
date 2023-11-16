@@ -94,10 +94,9 @@ jobs:
         run: |
           DISTROOT=build_mingw64/dist/usr/x86_64-w64-mingw32/sys-root/mingw
           sudo mv $DISTROOT QGIS-Portable
-          zip -r qgis-portable-win64.zip QGIS-Portable
 
       - name: Upload QGIS for Windows 64bit
         uses: actions/upload-artifact@v3
         with:
           name: QGIS for Windows 64bit
-          path: qgis-portable-win64.zip
+          path: QGIS-Portable
