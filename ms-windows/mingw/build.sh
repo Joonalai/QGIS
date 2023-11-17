@@ -41,10 +41,10 @@ fi
 MINGWROOT=/usr/$arch-w64-mingw32/sys-root/mingw
 
 if $DEBUG; then
-  optflags="-O0 -g1 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4 -fno-omit-frame-pointer"
+  optflags="-O1 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4 -fno-omit-frame-pointer"
   buildtype="Debug"
 else
-  optflags="-O2 -g1 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4 -fno-omit-frame-pointer"
+  optflags="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4 -fno-omit-frame-pointer"
   buildtype="RelWithDebugInfo"
 fi
 pyver=$(mingw${bits}-python3 -c "import sys; print('.'.join(list(map(str, sys.version_info))[0:2]))")
@@ -58,12 +58,8 @@ export MINGW64_CFLAGS="$optflags"
 export MINGW64_CXXFLAGS="$optflags"
 
 SRCDIR="$(readlink -f "$(dirname "$(readlink -f "$0")")/../..")"
+BUILDDIR="$SRCDIR/build_mingw${bits}"
 
-if $DEBUG; then
-  BUILDDIR="$SRCDIR/build_mingw${bits}_debug"
-else
-  BUILDDIR="$SRCDIR/build_mingw${bits}"
-fi
 installroot="$BUILDDIR/dist"
 installprefix="$installroot/usr/$arch-w64-mingw32/sys-root/mingw"
 
@@ -150,29 +146,30 @@ echo "::group::link dependenceis"
 # Remove plugins with missing dependencies
 rm -rf "${installroot}/share/qgis/python/plugins/{MetaSearch,processing}"
 
-# Strip debuginfo
-binaries=$(find "$installprefix" -name '*.exe' -or -name '*.dll' -or -name '*.pyd')
-for f in $binaries
-do
-    case $(mingw-objdump -h "$f" 2>/dev/null | grep -E -o '(debug[\.a-z_]*|gnu.version)') in
-        *debuglink*) continue ;;
-        *debug*) ;;
-        *gnu.version*)
-        echo "WARNING: $(basename "$f") is already stripped!"
-        continue
-        ;;
-        *) continue ;;
-    esac
-
-    echo extracting debug info from "$f"
-    mingw-objcopy --only-keep-debug "$f" "$f.debug" || :
-    pushd $(dirname "$f")
-    keep_symbols=$(mktemp)
-    mingw-nm $f.debug --format=sysv --defined-only | awk -F \| '{ if ($4 ~ "Function") print $1 }' | sort > "$keep_symbols"
-    mingw-objcopy --add-gnu-debuglink=$(basename "$f.debug") --strip-unneeded $(basename "$f") --keep-symbols="$keep_symbols" || :
-    rm -f "$keep_symbols"
-    popd
-done
+# # Strip debuginfo
+# binaries=$(find "$installprefix" -name '*.exe' -or -name '*.dll' -or -name '*.pyd')
+# for f in $binaries
+# do
+#     case $(mingw-objdump -h "$f" 2>/dev/null | grep -E -o '(debug[\.a-z_]*|gnu.version)') in
+#         *debuglink*) continue ;;
+#         *debug*) ;;
+#         *gnu.version*)
+#         echo "WARNING: $(basename "$f") is already stripped!"
+#         continue
+#         ;;
+#         *) continue ;;
+#     esac
+# 
+#     echo extracting debug info from "$f"
+#     mingw-objcopy --only-keep-debug "$f" "$f.debug" || :
+#     pushd $(dirname "$f")
+#     keep_symbols=$(mktemp)
+#     mingw-nm $f.debug --format=sysv --defined-only | awk -F \| '{ if ($4 ~ "Function") print $1 }' | sort > "$keep_symbols"
+#     mingw-objcopy --add-gnu-debuglink=$(basename "$f.debug") --strip-unneeded $(basename "$f") --keep-symbols="$keep_symbols" || :
+#     rm -f "$keep_symbols"
+#     popd
+# done
+# 
 
 # Collect dependencies
 function isnativedll {
