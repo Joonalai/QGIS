@@ -2200,7 +2200,7 @@ void QgsVertexTool::moveVertex( const QgsPointXY &mapPoint, const QgsPointLocato
 
   applyEditsToLayers( edits );
 
-  if ( QgsProject::instance()->topologicalEditing() )
+  if ( QgsProject::instance()->topologicalEditing() && mapPointMatch->layer() )
   {
     // topo editing: add vertex to existing segments when moving/adding a vertex to such segment.
 
