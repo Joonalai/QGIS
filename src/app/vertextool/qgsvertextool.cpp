@@ -2201,7 +2201,10 @@ void QgsVertexTool::moveVertex( const QgsPointXY &mapPoint, const QgsPointLocato
 
   applyEditsToLayers( edits );
 
-  if ( QgsProject::instance()->topologicalEditing() )
+  QgsSettings settings;
+  bool onlySnapped = settings.value( QStringLiteral( "qgis/digitizing/addTopoPointsOnlyIfSnapped" ), false ).toBool();
+
+  if ( QgsProject::instance()->topologicalEditing() && ( !onlySnapped || ( onlySnapped && mapPointMatch->layer() ) ) )
   {
     // topo editing: add vertex to existing segments when moving/adding a vertex to such segment.
 

@@ -27,8 +27,11 @@
 #include "qgsexpressioncontextutils.h"
 #include "qgsrubberband.h"
 #include "qgsvectorlayereditutils.h"
+#include "qgsmultipoint.h"
 
 #include <QSettings>
+#include <algorithm>
+
 
 QgsMapToolAddFeature::QgsMapToolAddFeature( QgsMapCanvas *canvas, QgsAdvancedDigitizingDockWidget *cadDockWidget, CaptureMode mode )
   : QgsMapToolDigitizeFeature( canvas, cadDockWidget, mode )
@@ -118,8 +121,12 @@ void QgsMapToolAddFeature::featureDigitized( const QgsFeature &feature )
         }
       }
     }
-    if ( topologicalEditing )
+
+    QgsSettings settings;
+    bool onlySnapped = settings.value( QStringLiteral( "qgis/digitizing/addTopoPointsOnlyIfSnapped" ), false ).toBool();
+    if ( topologicalEditing && !onlySnapped )
     {
+      qDebug() << "Normal adding";
       QgsFeatureRequest request = QgsFeatureRequest().setNoAttributes().setFlags( Qgis::FeatureRequestFlag::NoGeometry ).setLimit( 1 );
       const QgsRectangle bbox = feature.geometry().boundingBox();
       const QList<QgsMapLayer *> layers = canvas()->layers( true );
@@ -181,6 +188,96 @@ void QgsMapToolAddFeature::featureDigitized( const QgsFeature &feature )
           vectorLayer->endEditCommand();
         else
           vectorLayer->destroyEditCommand();
+      }
+    }
+    if ( topologicalEditing && onlySnapped )
+    {
+      qDebug() << "Adding only snapped";
+      const QList<QgsPointLocator::Match> sm = snappingMatches();
+      QgsMultiPoint *snapPoints = new QgsMultiPoint();
+
+
+      for ( int i = 0; i < sm.size(); ++i )
+      {
+        if ( sm.at( i ).layer() )
+          snapPoints->addGeometry( feature.geometry().vertexAt( i ).clone() );
+      }
+
+      if ( snapPoints->partCount() )
+      {
+        QgsFeatureRequest request = QgsFeatureRequest().setNoAttributes().setFlags( Qgis::FeatureRequestFlag::NoGeometry ).setLimit( 1 );
+        const QgsRectangle bbox = feature.geometry().boundingBox();
+        QgsRectangle searchRect;
+        QgsFeature f;
+        QgsCoordinateTransform transform;
+
+        QgsPointSequence topoPoints;
+        for ( int j = 0; j < snapPoints->partCount(); ++j )
+        {
+          topoPoints.append( *snapPoints->pointN( j ) );
+        }
+
+        const QList<QgsMapLayer *> layers = canvas()->layers( true );
+        for ( QgsMapLayer *layer : layers )
+        {
+          QgsVectorLayer *vectorLayer = qobject_cast<QgsVectorLayer *>( layer );
+          if ( !vectorLayer || !vectorLayer->isEditable() )
+            continue;
+
+          if ( !( vectorLayer->geometryType() == Qgis::GeometryType::Polygon || vectorLayer->geometryType() == Qgis::GeometryType::Line ) )
+            continue;
+
+          if ( vectorLayer->crs() == vlayer->crs() )
+          {
+            searchRect = QgsRectangle( bbox );
+          }
+          else
+          {
+            transform = QgsCoordinateTransform( vlayer->crs(), vectorLayer->crs(), vectorLayer->transformContext() );
+            searchRect = transform.transformBoundingBox( bbox );
+          }
+
+          searchRect.grow( QgsVectorLayerEditUtils::getTopologicalSearchRadius( vectorLayer ) );
+          request.setFilterRect( searchRect );
+
+          // We check that there is actually at least one feature intersecting our geometry in the layer to avoid creating an empty edit command and calling costly addTopologicalPoint
+          if ( !vectorLayer->getFeatures( request ).nextFeature( f ) )
+            continue;
+
+          vectorLayer->beginEditCommand( tr( "Topological points added by 'Add Feature'" ) );
+          int res = 2;
+          if ( vectorLayer->crs() != vlayer->crs() )
+          {
+            try
+            {
+              QgsMultiPoint *transformedGeom = snapPoints->clone();
+              // transform digitized geometry from vlayer crs to vectorLayer crs and add topological points
+              transformedGeom->transform( transform );
+
+              QgsPointSequence trarnsformedtopoPoints;
+              for ( int j = 0; j < transformedGeom->partCount(); ++j )
+              {
+                trarnsformedtopoPoints.append( *transformedGeom->pointN( j ) );
+              }
+
+              res = vectorLayer->addTopologicalPoints( trarnsformedtopoPoints );
+            }
+            catch ( QgsCsException &cse )
+            {
+              Q_UNUSED( cse )
+              QgsDebugError( QStringLiteral( "transformation to vectorLayer coordinate failed" ) );
+            }
+          }
+          else
+          {
+            res = vectorLayer->addTopologicalPoints( topoPoints );
+          }
+
+          if ( res == 0 ) // i.e. if points were added
+            vectorLayer->endEditCommand();
+          else
+            vectorLayer->destroyEditCommand();
+        }
       }
     }
   }
